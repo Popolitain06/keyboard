@@ -85,22 +85,87 @@ const signIn = async (req, res) => {
     }
 };
 
-const getDetails = async (req,res) =>{
+import jwt from 'jsonwebtoken'
 
-    const query = "SELECT * from users WHERE email = ?"
-    const [datas] = await Query.findByDatas(query,req.params);
+const getDetails = async (req, res) => {
+    try {
+        const token = req.headers.authentication.split(' ')[1]; // Récupérer le token depuis les headers
+        const decodedToken = jwt.verify(token, SK);
 
-    if(!datas.length){
-        res.status(404).json({msg:"Utilisateur non reconnu"})
-    }
+        const query = "SELECT * from users WHERE email = ?"
+        const [datas] = await Query.findByDatas(query, [decodedToken.email]); // Utiliser l'email extrait du token
 
-    if(datas.length){
+        if (!datas.length) {
+            res.status(404).json({ msg: "Utilisateur non reconnu" })
+        }
+
         res.status(200).json(datas);
-        return;
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-
 }
 
+const updateDetails = async (req, res) => {
+    try {
+        const token = req.headers.authentication.split(' ')[1]; // Récupérer le token depuis les headers
+        const decodedToken = jwt.verify(token, SK); // Décoder le token
+
+        const datasToUpdate = {};
+
+        if (req.body.firstName && req.body.firstName.trim() !== '') {
+            datasToUpdate.FirstName = req.body.firstName;
+        }
+
+        if (req.body.lastName && req.body.lastName.trim() !== '') {
+            datasToUpdate.LastName = req.body.lastName;
+        }
+
+        if (req.body.dateOfBirth && req.body.dateOfBirth.trim() !== '') {
+            datasToUpdate.DateOfBirth = req.body.dateOfBirth;
+        }
+
+        if (req.body.number && req.body.number.trim() !== '') {
+            datasToUpdate.Number = req.body.number;
+        }
+
+        if (req.body.email && req.body.email.trim() !== '') {
+            datasToUpdate.email = req.body.email;
+        }
+
+        if (Object.keys(datasToUpdate).length === 0) {
+            return res.status(400).json({ msg: "Aucune donnée à mettre à jour" });
+        }
+
+        // Build the SQL query dynamically based on the fields to update
+        let query = "UPDATE users SET ";
+        let values = [];
+        for (let field in datasToUpdate) {
+            query += `${field} = ?, `;
+            values.push(datasToUpdate[field]);
+        }
+        query = query.slice(0, -2); // Remove the last comma and space
+        query += " WHERE email = ?";
+        values.push(decodedToken.email);
+
+        const [userDatas] = await Query.write(query, values);
+
+        if (!userDatas) {
+            return res.status(404).json({ msg: "Utilisateur non reconnu" });
+        }
+
+        const newEmail = datasToUpdate.email || decodedToken.email;
+        const newToken = sign({ email: newEmail }, SK);
+        // Send the new token in the 'Authentication' header
+        res.setHeader('Authentication', `Bearer ${newToken}`);
+        // Expose the 'Authentication' header
+        res.setHeader('Access-Control-Expose-Headers', 'Authentication');
+        res.status(200).json(userDatas); 
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
 
 
-export { createAccount, signIn, check_token, getDetails };
+
+
+export { createAccount, signIn, check_token, getDetails, updateDetails };
